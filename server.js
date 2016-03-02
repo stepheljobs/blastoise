@@ -51,20 +51,18 @@ io.on('connection', function (socket) {
     countUnreadMessages();
   });
 
-  // socket.on('test', function (msg) {
-  //     console.log('Message Received: ', msg);
-  //     socket.broadcast.to(CURRENT_ROOM).emit('test', msg);
-  // });
-
+  socket.on('test', function (msg) {
+      console.log('Message Received: ', msg);
+      socket.broadcast.to(CURRENT_ROOM).emit('test', msg);
+  });
 
   /* ===============================
   / MESSAGING
   / when a recipient sends a message
   /  ===============================
   */
-
 	socket.on("sendMessage", function (data) {
-    console.log(chalk.yellow("sendMessage:received < %s data: < %s"), CURRENT_ROOM, data);
+    console.log(chalk.yellow("sendMessage:received < %s data: < %s"), CURRENT_ROOM, JSON.stringify(data));
 		var sender = CURRENT_ROOM;
 		var message = {
 			sender: sender,
@@ -76,7 +74,8 @@ io.on('connection', function (socket) {
 
     console.log("sendMessage:sent > " + JSON.stringify(message));
 		connection.query('select * from message_tagger having combined_user_id = concat(?, "_", ?) or combined_user_id = concat(?, "_", ?)', [sender, data.recipient, data.recipient, sender], function (_error, _result) {
-		  if (_result) {
+    if(_result){
+		  if (_result.length == 0) {
 				connection.query('insert into message_tagger set ?', {combined_user_id: sender + "_" + data.recipient , mt_sender: sender, mt_recipient: data.recipient}, function (__error, __result) {
 				  message.message_tagger = __result.insertId;
 					connection.query('insert into messages set ?', message, function (error, result) {
@@ -107,6 +106,9 @@ io.on('connection', function (socket) {
 
         });
       }
+    }else{
+      console.log(chalk.red("sendMessage:error < %s "), _error);
+    }
 		});
 	});
 
@@ -117,15 +119,17 @@ io.on('connection', function (socket) {
   /  ===============================
   */
   function countUnreadMessages () {
-   console.log(chalk.yellow("countUnreadMessages"));
-   var sender = CURRENT_ROOM;
-   connection.query("select sum(m.read) as unread_count from messages m where recipient = ? and read = 0 limit 1", [sender], function (error, result) {
+    console.log(chalk.yellow("countUnreadMessages: {no paramater} "));
+    var sender = CURRENT_ROOM;
+    connection.query("select sum(m.read) as unread_count from messages m where recipient = ? and read = 0 limit 1", [sender], function (error, result) {
      if (result == null) {
+       console.log("countUnreadMessages: 0");
        socket.emit('showUnreadMessages_' + sender, 0);
      }else{
+       console.log("countUnreadMessages: ", result[0].unread_count);
        socket.emit('showUnreadMessages_' + sender, result[0].unread_count);
      }
-   });
+    });
   }
 
   /* ===============================
@@ -138,8 +142,9 @@ io.on('connection', function (socket) {
   	var sender = CURRENT_ROOM;
   		start = data.start;
   		limit = data.limit;
-  		connection.query("select mt.id as id,mt.last_seen_date as date, mt.combined_user_id, mt_sender, mt_recipient, recipient.fullname as recipient, sender.fullname sender from message_tagger mt left join users sender on sender.id = mt.mt_sender left join users recipient on recipient.id = mt.mt_recipient where mt.combined_user_id like '%" +sender + "%' order by last_seen_date limit ?,?", [start, limit], function (error, result) {
-        if(result && sender){
+  		connection.query("select mt.id as id,mt.last_seen_date as date, mt.combined_user_id, mt_sender, mt_recipient, recipient.fullname as recipient, sender.fullname sender from message_tagger as mt left join users sender on sender.id = mt.mt_sender left join users recipient on recipient.id = mt.mt_recipient where mt.combined_user_id like '%" + sender + "%' order by last_seen_date limit ?,?", [start, limit], function (error, result) {
+        console.log("result: ", result);
+        if(result){
           socket.emit('loadUserConversations_' + sender, result);
         }else{
           console.log(chalk.red("loadUserConversations:error: ", result));
@@ -154,20 +159,20 @@ io.on('connection', function (socket) {
   /  ===============================
   */
 	socket.on("loadConversation" , function (data) {
+    console.log(chalk.yellow("loadConversation: < %s"), JSON.stringify(data));
 		var sender = CURRENT_ROOM;
 			recipient = data.recipient;
 			start = data.start;
 			limit = data.limit;
-
 			connection.query('select * from message_tagger having combined_user_id = concat(?, "_", ?) or combined_user_id = concat(?, "_", ?) limit 1', [sender, data.recipient, data.recipient, sender], function (_error, _result) {
 				if(_result.length > 0){
-					console.log("--->>TAGGER... " + JSON.stringify(_result) + "--->>" + _result[0].id);
 					var message_tagger = _result[0].id;
+
 					connection.query("select m.* from messages m where message_tagger = ? order by id asc limit ?, ?", [message_tagger, start, limit], function (error, result) {
 						//console.log(this.sql);
 						socket.emit('loadConversation_' + sender, result);
-
 					});
+
 					connection.query('update messages m set m.read = 0 where where message_tagger = ?', [message_tagger] , function (error, result) {
 						console.log("ALL MESSAGES ARE NOW READ....");
 					});
@@ -220,10 +225,11 @@ io.on('connection', function (socket) {
     console.log(chalk.yellow('countNotification %s'), JSON.stringify(notif));
 		connection.query('select count(1) as count from notifications where `user_id` = ? and `viewed` = ? limit 1', [notif.user_id, notif.viewed], function (error, result) {
       if(result){
-        console.log(chalk.red('countNotification:Success %s'), result);
+        console.log("countNotification: ", result[0].count);
         socket.emit("showTotalNotification", result[0].count);
       }else{
-        console.log(chalk.red('countNotification:Error %s'), result);
+        console.log("countNotification: 0");
+        socket.emit("showTotalNotification", 0);
       }
 		});
   });
