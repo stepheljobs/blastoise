@@ -10,13 +10,23 @@ var fs = require('fs'),
     app = express(),
     server,
 	  connection = mysql.createConnection({
-		  host     : 'localhost',
+      database : "ipostmo-notifications",
 		  user     : 'root',
 		  password : '',
+      host     : 'localhost',
 		  port     : 3306,
-		  database : "ipostmo_notifications",
 		  multipleStatements: true
 	   });
+
+     var connection = mysql.createConnection({
+       host     : 'example.org',
+       user     : 'bob',
+       password : 'secret'
+     });
+
+ connection.on('error', function(err) {
+   console.log(chalk.red("Connection Error: %s"), err.code);
+ });
 
 app.disable('x-powered-by');
 app.use(function (req, res, next) {
